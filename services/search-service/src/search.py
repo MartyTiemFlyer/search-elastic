@@ -1,34 +1,50 @@
 # Поиск, автодополнение, подсказки
 
-from elasticsearch import Elasticsearch
-from models import ARTISTS_DATA
-
-INDEX_NAME = "artists"
-
+from elasticsearch import Elasticsearch, helpers
+from models import ARTISTS_DATA, SONGS_DATA, ALBUMS_DATA, GENRES_DATA
+from mappings import artists_mapping, songs_mapping, albums_mapping, genres_mapping
 
 def init_elasticsearch_data(es: Elasticsearch):
-    """Создает индекс artists и заполняет его тестовыми данными."""
-    if es.indices.exists(index=INDEX_NAME):
-        es.indices.delete(index=INDEX_NAME)
+    """
+    Инициализация всех индексов и загрузка данных в Elasticsearch.
+    Удаляет старые индексы, создаёт новые и индексирует объекты из models.
+    """
+    indices = {
+        "artists": (artists_mapping, ARTISTS_DATA, "artist_id"),
+        "songs": (songs_mapping, SONGS_DATA, "song_id"),
+        "albums": (albums_mapping, ALBUMS_DATA, "album_id"),
+        "genres": (genres_mapping, GENRES_DATA, "genre_id"),
+    }
 
-    es.indices.create(
-        index=INDEX_NAME,
-        body={
-            "mappings": {
-                "properties": {
-                    "artist_id": {"type": "integer"},
-                    "name": {"type": "text"},
-                    "artist_biography": {"type": "text"},
-                }
-            }
-        }
-    )
+    for index_name, (mapping, data, id_field) in indices.items():
+        # --- 1. Удаляем старый индекс, если есть
+        if es.indices.exists(index=index_name):
+            es.indices.delete(index=index_name)
+            print(f"Удалён старый индекс: {index_name}")
 
-    for artist in ARTISTS_DATA:
-        es.index(index=INDEX_NAME, id=artist.artist_id, document=artist.to_dict())
+        # --- 2. Создаём новый индекс
+        es.indices.create(index=index_name, body=mapping)
+        print(f"Создан новый индекс: {index_name}")
 
-    es.indices.refresh(index=INDEX_NAME)
-    print(f"Индекс '{INDEX_NAME}' успешно создан и заполнен {len(ARTISTS_DATA)} документами.")
+        # --- 3. Загружаем данные
+        if data:
+            actions = []
+            for obj in data:
+                obj_dict = obj.to_dict()
+                actions.append({
+                    "_index": index_name,
+                    "_id": obj_dict[id_field],
+                    "_source": obj_dict,
+                })
+
+            helpers.bulk(es, actions)
+            print(f"📦 Загружено {len(actions)} документов в {index_name}")
+
+    print("🎉 Инициализация Elasticsearch завершена успешно!")
+
+
+
+INDEX_NAME = "artists"
 
 
 # --- ARTIST ---
@@ -77,4 +93,73 @@ def suggest_artists(es, prefix: str, size: int = 5):
         "size": len(suggestions),
         "total": response["hits"]["total"]["value"],
         "suggestions": suggestions
+    }
+
+
+# ======== SONGS ========
+def search_songs(es, query: str, page: int = 1, size: int = 10):
+    """Поиск песен с пагинацией и исправлением опечаток"""
+    body = {
+        "query": {
+            "multi_match": {
+                "query": query,
+                "fields": ["name^2", "file_url"],
+                "fuzziness": "AUTO"
+            }
+        },
+        "from": (page - 1) * size,
+        "size": size
+    }
+
+    res = es.search(index="songs", body=body)
+
+    return {
+        "total": res["hits"]["total"]["value"],
+        "page": page,
+        "size": len(res["hits"]["hits"]),
+        "results": [hit["_source"] for hit in res["hits"]["hits"]]
+    }
+
+
+# ======== ALBUMS ========
+def search_albums(es, query: str, page: int = 1, size: int = 10):
+    body = {
+        "query": {
+            "multi_match": {
+                "query": query,
+                "fields": ["name^2", "cover_art_url"],
+                "fuzziness": "AUTO"
+            }
+        },
+        "from": (page - 1) * size,
+        "size": size
+    }
+    res = es.search(index="albums", body=body)
+    return {
+        "total": res["hits"]["total"]["value"],
+        "page": page,
+        "size": len(res["hits"]["hits"]),
+        "results": [hit["_source"] for hit in res["hits"]["hits"]]
+    }
+
+
+# ======== GENRES ========
+def search_genres(es, query: str, page: int = 1, size: int = 10):
+    body = {
+        "query": {
+            "multi_match": {
+                "query": query,
+                "fields": ["name^2"],
+                "fuzziness": "AUTO"
+            }
+        },
+        "from": (page - 1) * size,
+        "size": size
+    }
+    res = es.search(index="genres", body=body)
+    return {
+        "total": res["hits"]["total"]["value"],
+        "page": page,
+        "size": len(res["hits"]["hits"]),
+        "results": [hit["_source"] for hit in res["hits"]["hits"]]
     }

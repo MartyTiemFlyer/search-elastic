@@ -1,8 +1,8 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_from_directory
 from elasticsearch import Elasticsearch, RequestError
 from models import ARTISTS_DATA
-from mappings import artists_mapping
-from search import init_elasticsearch_data, search_artists, suggest_artists
+from mappings import artists_mapping, genres_mapping, albums_mapping, songs_mapping
+from search import search_albums, search_artists, search_genres, search_songs, suggest_artists
 print("🚀 Search Service STARTED!", flush=True)
 
 ES_HOST = "http://localhost:9200"
@@ -10,6 +10,7 @@ INDEX_NAME = "artists"
 app = Flask(__name__)
 
 es = Elasticsearch(ES_HOST, verify_certs=False)
+
 
 def delete_artists_index():
     if es.indices.exists(index=INDEX_NAME):
@@ -28,19 +29,6 @@ def load_sample_artists():
     print(f"Загружено {len(ARTISTS_DATA)} артистов в индекс '{INDEX_NAME}'.")
 
 
-
-def create_artists_index():
-    if es.indices.exists(index=INDEX_NAME):
-        print(f"Индекс '{INDEX_NAME}' уже существует.")
-        return
-
-    try:
-        es.indices.create(index=INDEX_NAME, body=artists_mapping)
-        print(f"Индекс '{INDEX_NAME}' создан успешно.")
-    except RequestError as e:
-        print(f"Ошибка при создании индекса: {e.info}")
-
-
 # ======== Утилита для формирования стандартизированного ответа ========
 def make_response(data, query="", page=1, total=0, status="ok", message=None):
     return {
@@ -53,17 +41,32 @@ def make_response(data, query="", page=1, total=0, status="ok", message=None):
         "message": message
     }
 
+# ======== Home Start ========
+@app.route("/")
+def home():
+    return send_from_directory("static", "index.html")
+
 # ======== Поиск артистов ========
 @app.route("/search")
 def search():
     query = request.args.get("q", "")
+    type_ = request.args.get("type", "artists")
     page = int(request.args.get("page", 1))
     size = int(request.args.get("size", 10))
 
     if not query:
         return jsonify(make_response([], query, page, 0, status="error", message="Пустой запрос")), 400
 
-    results_obj = search_artists(es, query, page, size)
+    # выбираем нужную функцию
+    if type_ == "songs":
+        results_obj = search_songs(es, query, page, size)
+    elif type_ == "albums":
+        results_obj = search_albums(es, query, page, size)
+    elif type_ == "genres":
+        results_obj = search_genres(es, query, page, size)
+    else:
+        results_obj = search_artists(es, query, page, size)
+
     response = make_response(
         data=results_obj["results"],
         query=query,
@@ -71,6 +74,7 @@ def search():
         total=results_obj["total"]
     )
     return jsonify(response)
+
 
 # ======== Автодополнение артистов ========
 @app.route("/suggest")
@@ -90,15 +94,38 @@ def suggest():
     )
     return jsonify(response)
 
+@app.route("/search_all")
+def search_all():
+    query = request.args.get("q", "")
+    page = int(request.args.get("page", 1))
+    size = int(request.args.get("size", 5))  # кол-во на категорию
+
+    if not query:
+        return jsonify(make_response({}, query, page, 0, status="error", message="Пустой запрос")), 400
+
+    results = {
+        "artists": search_artists(es, query, page, size)["results"],
+        "songs": search_songs(es, query, page, size)["results"],
+        "albums": search_albums(es, query, page, size)["results"],
+        "genres": search_genres(es, query, page, size)["results"],
+    }
+
+    total = sum(len(v) for v in results.values())
+
+    response = make_response(
+        data=results,
+        query=query,
+        page=page,
+        total=total
+    )
+    return jsonify(response)
 
 
 if __name__ == "__main__":
-    #delete_artists_index()
-    #create_artists_index()
     #load_sample_artists()
 
-    #init_elasticsearch_data(es)
-    #
+    # init_elasticsearch_data(es)
+    
     #results = search_artists(es, "adel")
     #for r in results:
     #    print(f"{r['name']} — {r['artist_biography']}")

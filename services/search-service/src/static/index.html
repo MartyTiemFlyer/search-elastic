@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Search Service Demo</title>
+<style>
+  body { font-family: Arial, sans-serif; margin: 20px; }
+  .tabs { margin-bottom: 10px; }
+  .tab { display: inline-block; padding: 8px 16px; border: 1px solid #ccc; cursor: pointer; margin-right: 2px; }
+  .tab.active { background-color: #007BFF; color: white; }
+  #results { margin-top: 20px; }
+  .item { border-bottom: 1px solid #eee; padding: 5px 0; }
+  input { padding: 6px; margin-right: 5px; }
+  button { padding: 6px 12px; }
+</style>
+</head>
+<body>
+
+<h2>Search Service Demo</h2>
+
+<div class="tabs">
+  <div class="tab active" data-type="artists">Artists</div>
+  <div class="tab" data-type="songs">Songs</div>
+  <div class="tab" data-type="albums">Albums</div>
+  <div class="tab" data-type="genres">Genres</div>
+</div>
+
+<input type="text" id="query" placeholder="Enter search text" style="width: 300px;">
+<button id="searchBtn">Search</button>
+<button id="searchAllBtn">Search All</button>
+
+<div id="results"></div>
+
+<script>
+let currentType = 'artists';
+
+
+// Переключение табов
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    tab.classList.add('active');
+    currentType = tab.dataset.type;
+    document.getElementById('results').innerHTML = '';
+  });
+});
+
+// Рекурсивный вывод JSON в столбик
+function renderJSON(obj, container, indent = 0) {
+  const indentPx = indent * 20;
+  for (const key in obj) {
+    const value = obj[key];
+    const p = document.createElement('p');
+    p.style.marginLeft = indentPx + 'px';
+
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+      p.innerHTML = `<b>${key}:</b>`;
+      container.appendChild(p);
+      renderJSON(value, container, indent + 1);
+    } else if (Array.isArray(value)) {
+      p.innerHTML = `<b>${key}:</b> [${value.length} items]`;
+      container.appendChild(p);
+      value.forEach(item => {
+        const itemDiv = document.createElement('div');
+        itemDiv.style.marginLeft = (indentPx + 20) + 'px';
+        if (typeof item === 'object') {
+          renderJSON(item, itemDiv, indent + 2);
+        } else {
+          itemDiv.textContent = item;
+        }
+        container.appendChild(itemDiv);
+      });
+    } else {
+      p.innerHTML = `<b>${key}:</b> ${value}`;
+      container.appendChild(p);
+    }
+  }
+}
+
+// Поиск по текущему табу
+document.getElementById('searchBtn').addEventListener('click', () => {
+  const query = document.getElementById('query').value;
+  if (!query) return alert("Enter search text");
+
+  fetch(`/search?q=${encodeURIComponent(query)}&type=${currentType}&page=1&size=5`)
+    .then(res => res.json())
+    .then(data => {
+      const container = document.getElementById('results');
+      container.innerHTML = '';
+      renderJSON(data, container);
+    })
+    .catch(err => {
+      console.error(err);
+      alert("Error fetching search results");
+    });
+});
+
+// Поиск по всем категориям
+document.getElementById('searchAllBtn').addEventListener('click', () => {
+  const query = document.getElementById('query').value;
+  if (!query) return alert("Enter search text");
+
+  fetch(`/search_all?q=${encodeURIComponent(query)}`)
+    .then(res => res.json())
+    .then(data => {
+      const container = document.getElementById('results');
+      container.innerHTML = '';
+      renderJSON(data, container);
+    })
+    .catch(err => {
+      console.error(err);
+      alert("Error fetching search_all results");
+    });
+});
+</script>
+</body>
+</html>
