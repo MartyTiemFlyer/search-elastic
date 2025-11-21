@@ -34,22 +34,29 @@ services:
 
     # Search Engine - ELASTICSEARCH
     elasticsearch:
-        image: elasticsearch:8.11.0  
+        image: elasticsearch:9.2.0
         restart: always
         environment:
           - discovery.type=single-node
-          - xpack.security.enabled=false
-          - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
-          - network.host=0.0.0.0
+          - bootstrap.memory_lock=true
+          - xpack.security.enabled=true
+          - xpack.security.http.ssl.enabled=false
+          - ES_JAVA_OPTS=-Xms512m -Xmx512m
+          - ELASTIC_PASSWORD=elastic
+        ulimits:
+            nofile:
+                soft: 65536
+                hard: 65536
+            memlock:
+                soft: -1
+                hard: -1
         ports:
           - "9200:9200"
         volumes:
           - ./data/elasticsearch:/usr/share/elasticsearch/data
-        
 
 
      # СЕРВИСЫ 
-
     search-service:     # 
         build: ./services/search-service
         ports:

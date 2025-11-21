@@ -2,14 +2,14 @@ from flask import Flask, request, jsonify, send_from_directory
 from elasticsearch import Elasticsearch, RequestError
 from models import ARTISTS_DATA
 from mappings import artists_mapping, genres_mapping, albums_mapping, songs_mapping
-from search import search_albums, search_artists, search_genres, search_songs, suggest_artists
+from search import init_elasticsearch_data, search_albums, search_artists, search_genres, search_songs, suggest_artists
 print("🚀 Search Service STARTED!", flush=True)
 
-ES_HOST = "http://localhost:9200"
+ES_HOST = "http://elasticsearch:9200"
 INDEX_NAME = "artists"
 app = Flask(__name__)
 
-es = Elasticsearch(ES_HOST, verify_certs=False)
+es = Elasticsearch(ES_HOST, basic_auth=("elastic", "elastic"))
 
 
 def delete_artists_index():
@@ -124,7 +124,7 @@ def search_all():
 if __name__ == "__main__":
     #load_sample_artists()
 
-    # init_elasticsearch_data(es)
+    init_elasticsearch_data(es)
     
     #results = search_artists(es, "adel")
     #for r in results:
